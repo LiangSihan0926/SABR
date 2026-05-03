@@ -1,5 +1,7 @@
 # SABR Model — Implementation and Empirical Evaluation
 
+![SPY smile motivation](docs/banner.png)
+
 Computational replication of Hagan, Kumar, Lesniewski and Woodward (2002),
 *Managing Smile Risk*, applied to a decade of SPY and QQQ end-of-day option
 chains. Final project for ORIE 5610 (Stochastic Calculus), Cornell
