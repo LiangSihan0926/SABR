@@ -1,11 +1,11 @@
 """Three additional figures for the Final Project Report.
 
-Reads cache/calibration_results.parquet (1,260 fits) produced by Module 4
+Reads cache/calibration_results.parquet (630 fits) produced by Module 4
 and writes:
 
     fig18_term_structure.png       median (alpha, rho, nu) by DTE
     fig19_spy_qqq_scatter.png      same-date SPY vs QQQ parameter scatter
-    fig20_rmse_distribution.png    1,260-fit RMSE histogram, three betas
+    fig20_rmse_distribution.png    630-fit RMSE histogram, three betas
 
 Run:  python3 export_figs_round3.py
 """

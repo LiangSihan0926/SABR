@@ -174,10 +174,13 @@ def load_options(underlying, data_dir, years=None, **kwargs):
 # Smile construction for a single (ticker, trade_date, expiry)
 # ---------------------------------------------------------------
 def extract_forward(smile_df, r):
-    """Implied forward from put-call parity at the strike closest to spot.
+    """Implied forward from put-call parity at the strike minimizing
+    |C_mid - P_mid|.
 
-    At an ATM strike K*,   C - P = D(F - K)  ⇒  F = K* + (C - P)*exp(r T).
-    Using the strike-with-minimum-|C_mid - P_mid| reduces noise from the
+    At an ATM-equivalent strike K*,   C - P = D(F - K)  ⇒  F = K* + (C - P)*exp(r T).
+    Selecting K* by minimum |C_mid - P_mid| (rather than by proximity to
+    spot) puts K* at the strike where call and put quotes are most
+    consistent under European parity, which reduces noise from the
     bid-ask spread at ITM strikes.
     """
     df = smile_df.copy()
