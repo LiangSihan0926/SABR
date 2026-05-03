@@ -1,7 +1,8 @@
 """Export the additional figures needed for the round-2 presentation.
 
-Reuses fig01-fig10 produced for round 1 in /Users/leungsun/Downloads/figs/
-and writes 7 new figures (fig11-fig17) to the same folder.
+Writes 7 new figures (fig11-fig17) to <repo>/figures/.
+The output directory can be overridden with the SABR_FIG_DIR
+environment variable.
 
 Run:  python3 export_figs_round2.py
 """
@@ -13,13 +14,13 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 
-# --- locate project ----
+# --- locate project (everything is repo-relative) ----
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(HERE, ".."))
 sys.path.insert(0, ROOT)
 DATA_DIR  = os.path.join(ROOT, "Data")
 CACHE_DIR = os.path.join(ROOT, "cache")
-OUT_DIR   = "/Users/leungsun/Downloads/figs"
+OUT_DIR   = os.environ.get("SABR_FIG_DIR", os.path.join(ROOT, "figures"))
 os.makedirs(OUT_DIR, exist_ok=True)
 
 from src.sabr import sabr_vol, sabr_vol_atm

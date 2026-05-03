@@ -175,7 +175,7 @@ cells = [
     md(
         "---\n## 4. Full-grid calibration\n\n"
         "Run `calibrate_sabr` on every row of Module 3's calibration grid "
-        "(70 trade dates × 2 tickers × 3 DTEs × 3 β values = **1 260 fits**)."
+        "(35 quarterly trade dates × 2 tickers × 3 DTEs × 3 β values = **630 fits** across 210 unique market smiles)."
         " Cache the result to `cache/calibration_results.parquet`."
     ),
     code(
@@ -315,7 +315,7 @@ cells = [
         "* **$\\beta$ observation**: fit quality is nearly identical across "
         "  $\\beta\\in\\{0, 0.5, 1\\}$ on any single smile. $\\beta$ will be "
         "  distinguished via backbone dynamics in Module 5.\n"
-        "* All fitted parameters cached in `cache/calibration_results.parquet` — 1 260 rows ready for the model-comparison study."
+        "* All fitted parameters cached in `cache/calibration_results.parquet` — 630 rows (210 smiles × 3 β) ready for the model-comparison study."
     ),
 ]
 

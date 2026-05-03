@@ -1,5 +1,7 @@
-"""Export presentation-ready figures from the project notebooks
-into ~/Downloads/figs/  (next to main (1).tex).
+"""Export presentation-ready figures from the project notebooks.
+
+Output goes to <repo>/figures/ by default, overridable via the
+SABR_FIG_DIR environment variable.
 
 Usage:  python3 _export_slides_figs.py
 """
@@ -9,7 +11,7 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
-# project paths
+# project paths (everything is repo-relative)
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(HERE, ".."))
 sys.path.insert(0, ROOT)
@@ -26,7 +28,7 @@ from src.model_compare import (
     predict_local_vol, predict_sabr, rmse,
 )
 
-OUT = os.path.expanduser("~/Downloads/figs")
+OUT = os.environ.get("SABR_FIG_DIR", os.path.join(ROOT, "figures"))
 os.makedirs(OUT, exist_ok=True)
 print(f"writing to {OUT}")
 

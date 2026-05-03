@@ -18,8 +18,9 @@ import matplotlib.pyplot as plt
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(HERE, ".."))
+sys.path.insert(0, ROOT)
 CACHE_DIR = os.path.join(ROOT, "cache")
-OUT_DIR   = "/Users/leungsun/Downloads/figs"
+OUT_DIR   = os.environ.get("SABR_FIG_DIR", os.path.join(ROOT, "figures"))
 os.makedirs(OUT_DIR, exist_ok=True)
 
 plt.rcParams.update({
