@@ -1,0 +1,13 @@
+# Versions used in the original study (Spring 2026, Python 3.10)
+# Newer minor versions are expected to work.
+
+numpy>=2.2,<3.0
+scipy>=1.15,<2.0
+pandas>=2.3,<3.0
+matplotlib>=3.10,<4.0
+pyarrow>=20.0          # required for parquet I/O
+
+# Notebook execution (only needed if you want to re-run .ipynb files)
+jupyter>=1.1
+nbconvert>=7.0
+ipykernel>=7.0
