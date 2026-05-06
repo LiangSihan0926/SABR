@@ -228,3 +228,12 @@ from optionsdx.com if you wish to reproduce the empirical study.
 Sihan Liang  ([sl3639@cornell.edu](mailto:sl3639@cornell.edu))
 Cornell University, School of Operations Research and Information
 Engineering.
+
+## Interactive Event Stress Replay Dashboard
+
+An additional interactive HTML dashboard is provided for the event-anchored portfolio stress replay. It allows users to filter the historical stress-event library by year window, shock threshold, event count, hedge overlay, and sorting rule.
+
+- Interactive dashboard: [`docs/event_stress_replay_explorer.html`](docs/event_stress_replay_explorer.html)
+- Data extract: [`docs/event_stress_replay_data.csv`](docs/event_stress_replay_data.csv)
+
+![Event stress replay dashboard](figures/event_stress_replay_explorer_screenshot.png)

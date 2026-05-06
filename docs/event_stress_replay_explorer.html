@@ -1,0 +1,387 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Event Stress Replay Explorer</title>
+<style>
+:root {
+  --bg: #0f1419;
+  --panel: #171d24;
+  --panel-2: #202832;
+  --line: #31404f;
+  --text: #e8eef5;
+  --muted: #93a3b5;
+  --red: #e35b52;
+  --amber: #f0b84f;
+  --green: #26b59a;
+  --blue: #71a7ff;
+  --white: #ffffff;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+}
+.shell { display: grid; grid-template-columns: 310px minmax(760px, 1fr); min-height: 100vh; }
+.sidebar {
+  border-right: 1px solid var(--line);
+  background: #151a21;
+  padding: 28px 24px;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow: auto;
+}
+.brand { font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); margin-bottom: 8px; }
+h1 { font-size: 28px; line-height: 1.08; margin: 0 0 22px; font-weight: 760; }
+.control { padding: 16px 0; border-top: 1px solid var(--line); }
+.control:first-of-type { border-top: 0; }
+label { display: flex; justify-content: space-between; gap: 12px; color: var(--muted); font-size: 13px; margin-bottom: 8px; }
+.value { color: var(--text); font-variant-numeric: tabular-nums; }
+select, input[type="range"] { width: 100%; }
+select {
+  appearance: none;
+  background: var(--panel-2);
+  border: 1px solid #3a4858;
+  color: var(--text);
+  border-radius: 7px;
+  padding: 11px 12px;
+  font-size: 14px;
+}
+.year-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+input[type="range"] { accent-color: var(--green); }
+.checks { display: grid; gap: 10px; }
+.check { display: flex; align-items: center; gap: 10px; color: var(--text); font-size: 14px; }
+.check input { width: 16px; height: 16px; accent-color: var(--green); }
+.note { color: var(--muted); font-size: 12px; line-height: 1.45; margin-top: 18px; }
+.main { padding: 30px; overflow: auto; }
+.topline { display: flex; justify-content: space-between; gap: 20px; align-items: flex-end; margin-bottom: 20px; }
+.topline h2 { margin: 0; font-size: 24px; }
+.sub { color: var(--muted); margin-top: 6px; font-size: 14px; }
+.kpis { display: grid; grid-template-columns: repeat(5, minmax(140px, 1fr)); gap: 12px; margin-bottom: 18px; }
+.kpi { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px 14px 12px; min-height: 86px; }
+.kpi .name { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; }
+.kpi .num { margin-top: 10px; font-size: 24px; font-weight: 740; font-variant-numeric: tabular-nums; }
+.kpi .hint { color: var(--muted); font-size: 12px; margin-top: 4px; }
+.grid { display: grid; grid-template-columns: minmax(0, 1.52fr) minmax(360px, 0.9fr); gap: 18px; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 16px; min-width: 0; }
+.card h3 { margin: 0 0 12px; font-size: 15px; color: var(--text); }
+.card-title { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
+.card-title span { color: var(--muted); font-size: 12px; }
+svg { width: 100%; display: block; }
+.axis text, .tick { fill: var(--muted); font-size: 11px; }
+.axis line, .gridline { stroke: #2f3d4a; stroke-width: 1; }
+.zero { stroke: #556575; stroke-width: 1.2; }
+.event-label { fill: #c8d3df; font-size: 11px; }
+.loss-label { fill: #e8eef5; font-size: 11px; font-variant-numeric: tabular-nums; }
+.table-wrap { max-height: 420px; overflow: auto; border: 1px solid var(--line); border-radius: 8px; }
+table { border-collapse: collapse; width: 100%; min-width: 620px; font-size: 13px; }
+th { position: sticky; top: 0; background: #202832; color: var(--muted); text-align: left; font-weight: 620; }
+th, td { padding: 10px 12px; border-bottom: 1px solid #2a3643; white-space: nowrap; }
+td.num { text-align: right; font-variant-numeric: tabular-nums; }
+.empty { color: var(--muted); padding: 80px 20px; text-align: center; border: 1px dashed #3a4858; border-radius: 8px; }
+.footer { color: var(--muted); font-size: 12px; margin-top: 18px; }
+@media (max-width: 1120px) {
+  .shell { grid-template-columns: 1fr; }
+  .sidebar { position: relative; height: auto; }
+  .grid { grid-template-columns: 1fr; }
+  .kpis { grid-template-columns: repeat(2, 1fr); }
+}
+</style>
+</head>
+<body>
+<div class="shell">
+  <aside class="sidebar">
+    <div class="brand">SABR stress replay</div>
+    <h1>Event-Anchored Portfolio Explorer</h1>
+
+    <div class="control">
+      <label><span>Year window</span><span class="value" id="yearValue"></span></label>
+      <div class="year-row">
+        <select id="startYear"></select>
+        <select id="endYear"></select>
+      </div>
+    </div>
+
+    <div class="control">
+      <label><span>Stress threshold</span><span class="value" id="shockValue"></span></label>
+      <input id="shockThreshold" type="range" min="-12" max="-3" step="0.25" value="-3">
+    </div>
+
+    <div class="control">
+      <label><span>Events shown</span><span class="value" id="topValue"></span></label>
+      <input id="topN" type="range" min="4" max="32" step="1" value="12">
+    </div>
+
+    <div class="control">
+      <label><span>Hedge overlay</span><span class="value">scenario</span></label>
+      <select id="hedgeSelect"></select>
+    </div>
+
+    <div class="control">
+      <label><span>Sort events</span><span class="value">order</span></label>
+      <select id="sortBy">
+        <option value="severity">Market shock</option>
+        <option value="date">Calendar date</option>
+        <option value="unhedged">Unhedged loss</option>
+        <option value="hedged">Hedged loss</option>
+        <option value="coverage">Coverage</option>
+      </select>
+    </div>
+
+    <div class="control checks">
+      <label><span>Layers</span><span class="value">bars</span></label>
+      <div class="check"><input id="showUnhedged" type="checkbox" checked><span>Show unhedged</span></div>
+      <div class="check"><input id="showHedged" type="checkbox" checked><span>Show selected hedge</span></div>
+    </div>
+
+    <div class="note">PnL paths come from the project stress-replay output. Reported top-event shocks are kept exactly where available; remaining shocks are close-to-close SPY moves for the same event dates.</div>
+  </aside>
+
+  <main class="main">
+    <div class="topline">
+      <div>
+        <h2>Historical drop replay on today's short-put portfolio</h2>
+        <div class="sub" id="subtitle"></div>
+      </div>
+    </div>
+
+    <section class="kpis" id="kpis"></section>
+
+    <section class="grid">
+      <div class="card">
+        <div class="card-title"><h3>Replay loss by event</h3><span id="barCaption"></span></div>
+        <div id="barChart"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-title"><h3>Event timeline</h3><span>shock vs. date</span></div>
+        <div id="timelineChart"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-title"><h3>Hedge coverage</h3><span>selected overlay</span></div>
+        <div id="coverageChart"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-title"><h3>Filtered event table</h3><span id="tableCaption"></span></div>
+        <div class="table-wrap"><table id="eventTable"></table></div>
+      </div>
+    </section>
+
+    <div class="footer">Local artifact: event_stress_replay_explorer.html. Companion data extract: event_stress_replay_data.csv.</div>
+  </main>
+</div>
+
+<script>
+const DATA = {"events":[{"date":"2020-03-16","year":2020,"shock":-11.51,"pnl":{"no hedge":-4086.745511,"long 100x 405-put":-2126.813058,"long 100x 420-put":-1618.874033,"long 100x 429-put":-1191.89116,"long 100x 439-put":-759.388688,"long 100x 453-put":0.0}},{"date":"2020-03-12","year":2020,"shock":-9.6,"pnl":{"no hedge":-3410.255472,"long 100x 405-put":-1842.200005,"long 100x 420-put":-1413.900969,"long 100x 429-put":-1047.844657,"long 100x 439-put":-671.817617,"long 100x 453-put":0.0}},{"date":"2020-03-09","year":2020,"shock":-7.73,"pnl":{"no hedge":-2324.511415,"long 100x 405-put":-1547.845655,"long 100x 420-put":-1232.463473,"long 100x 429-put":-938.983433,"long 100x 439-put":-617.458043,"long 100x 453-put":0.0}},{"date":"2020-06-11","year":2020,"shock":-5.75,"pnl":{"no hedge":-1398.068982,"long 100x 405-put":-1003.821705,"long 100x 420-put":-831.240063,"long 100x 429-put":-656.939469,"long 100x 439-put":-449.577222,"long 100x 453-put":0.0}},{"date":"2020-03-18","year":2020,"shock":-5.06,"pnl":{"no hedge":-2403.982683,"long 100x 405-put":-1345.917978,"long 100x 420-put":-1036.663753,"long 100x 429-put":-770.009532,"long 100x 439-put":-494.429948,"long 100x 453-put":0.0}},{"date":"2020-03-20","year":2020,"shock":-4.98,"pnl":{"no hedge":-1924.754676,"long 100x 405-put":-1239.685476,"long 100x 420-put":-980.184254,"long 100x 429-put":-742.728533,"long 100x 439-put":-485.857284,"long 100x 453-put":0.0}},{"date":"2020-03-11","year":2020,"shock":-4.9,"pnl":{"no hedge":-1721.689008,"long 100x 405-put":-1148.183076,"long 100x 420-put":-915.691758,"long 100x 429-put":-698.827572,"long 100x 439-put":-460.412368,"long 100x 453-put":0.0}},{"date":"2020-04-01","year":2020,"shock":-4.49,"pnl":{"no hedge":-1654.34838,"long 100x 405-put":-1118.589465,"long 100x 420-put":-893.351182,"long 100x 429-put":-682.273879,"long 100x 439-put":-449.661828,"long 100x 453-put":0.0}},{"date":"2020-02-27","year":2020,"shock":-4.49,"pnl":{"no hedge":-1123.762701,"long 100x 405-put":-903.10134,"long 100x 420-put":-756.041941,"long 100x 429-put":-599.66665,"long 100x 439-put":-409.901363,"long 100x 453-put":0.0}},{"date":"2022-09-13","year":2022,"shock":-4.35,"pnl":{"no hedge":-864.162797,"long 100x 405-put":-738.270212,"long 100x 420-put":-640.107229,"long 100x 429-put":-524.907675,"long 100x 439-put":-371.943349,"long 100x 453-put":0.0}},{"date":"2018-02-05","year":2018,"shock":-4.18,"pnl":{"no hedge":-698.636415,"long 100x 405-put":-602.920435,"long 100x 420-put":-528.889632,"long 100x 429-put":-439.818124,"long 100x 439-put":-317.457622,"long 100x 453-put":0.0}},{"date":"2015-08-24","year":2015,"shock":-4.21,"pnl":{"no hedge":-793.800784,"long 100x 405-put":-678.591794,"long 100x 420-put":-587.208323,"long 100x 429-put":-480.634307,"long 100x 439-put":-340.028287,"long 100x 453-put":0.0}},{"date":"2022-05-18","year":2022,"shock":-4.03,"pnl":{"no hedge":-987.692675,"long 100x 405-put":-803.722139,"long 100x 420-put":-680.376705,"long 100x 429-put":-545.509784,"long 100x 439-put":-377.255629,"long 100x 453-put":0.0}},{"date":"2022-06-13","year":2022,"shock":-3.8,"pnl":{"no hedge":-1032.78272,"long 100x 405-put":-794.685651,"long 100x 420-put":-664.628485,"long 100x 429-put":-528.362363,"long 100x 439-put":-362.854484,"long 100x 453-put":0.0}},{"date":"2018-02-08","year":2018,"shock":-3.75,"pnl":{"no hedge":-707.050373,"long 100x 405-put":-535.599786,"long 100x 420-put":-454.902228,"long 100x 429-put":-368.919413,"long 100x 439-put":-260.424853,"long 100x 453-put":0.0}},{"date":"2022-04-29","year":2022,"shock":-3.7,"pnl":{"no hedge":-1021.974099,"long 100x 405-put":-741.968456,"long 100x 420-put":-613.768159,"long 100x 429-put":-484.25373,"long 100x 439-put":-330.60406,"long 100x 453-put":0.0}},{"date":"2016-06-24","year":2016,"shock":-3.59,"pnl":{"no hedge":-349.89484,"long 100x 405-put":-318.786076,"long 100x 420-put":-288.926907,"long 100x 429-put":-249.121044,"long 100x 439-put":-188.39303,"long 100x 453-put":0.0}},{"date":"2022-05-05","year":2022,"shock":-3.55,"pnl":{"no hedge":-914.208959,"long 100x 405-put":-696.19749,"long 100x 420-put":-581.899014,"long 100x 429-put":-462.838688,"long 100x 439-put":-318.384574,"long 100x 453-put":0.0}},{"date":"2020-10-28","year":2020,"shock":-3.42,"pnl":{"no hedge":-1073.14843,"long 100x 405-put":-787.091609,"long 100x 420-put":-647.761665,"long 100x 429-put":-507.902945,"long 100x 439-put":-343.98887,"long 100x 453-put":0.0}},{"date":"2020-09-03","year":2020,"shock":-3.44,"pnl":{"no hedge":-761.612659,"long 100x 405-put":-553.362786,"long 100x 420-put":-465.264789,"long 100x 429-put":-373.950882,"long 100x 439-put":-261.419449,"long 100x 453-put":0.0}},{"date":"2022-08-26","year":2022,"shock":-3.38,"pnl":{"no hedge":-652.520126,"long 100x 405-put":-556.095641,"long 100x 420-put":-483.516502,"long 100x 429-put":-398.285058,"long 100x 439-put":-284.179276,"long 100x 453-put":0.0}},{"date":"2020-03-05","year":2020,"shock":-3.32,"pnl":{"no hedge":-985.645286,"long 100x 405-put":-731.376833,"long 100x 420-put":-604.830815,"long 100x 429-put":-476.402891,"long 100x 439-put":-324.281934,"long 100x 453-put":0.0}},{"date":"2020-02-24","year":2020,"shock":-3.32,"pnl":{"no hedge":-518.740444,"long 100x 405-put":-437.355521,"long 100x 420-put":-381.056807,"long 100x 429-put":-315.415786,"long 100x 439-put":-227.016895,"long 100x 453-put":0.0}},{"date":"2018-10-10","year":2018,"shock":-3.17,"pnl":{"no hedge":-343.596458,"long 100x 405-put":-326.113802,"long 100x 420-put":-299.76684,"long 100x 429-put":-260.976642,"long 100x 439-put":-198.433114,"long 100x 453-put":0.0}},{"date":"2022-06-16","year":2022,"shock":-3.31,"pnl":{"no hedge":-891.622866,"long 100x 405-put":-681.497331,"long 100x 420-put":-571.712286,"long 100x 429-put":-456.355402,"long 100x 439-put":-315.12948,"long 100x 453-put":0.0}},{"date":"2018-12-04","year":2018,"shock":-3.24,"pnl":{"no hedge":-315.943204,"long 100x 405-put":-304.410887,"long 100x 420-put":-282.449881,"long 100x 429-put":-248.281112,"long 100x 439-put":-190.88542,"long 100x 453-put":0.0}},{"date":"2022-05-09","year":2022,"shock":-3.2,"pnl":{"no hedge":-979.336008,"long 100x 405-put":-758.811515,"long 100x 420-put":-631.735596,"long 100x 429-put":-499.51247,"long 100x 439-put":-340.76114,"long 100x 453-put":0.0}},{"date":"2018-10-24","year":2018,"shock":-3.03,"pnl":{"no hedge":-429.187266,"long 100x 405-put":-378.900251,"long 100x 420-put":-337.41788,"long 100x 429-put":-285.37391,"long 100x 439-put":-210.510309,"long 100x 453-put":0.0}},{"date":"2015-08-21","year":2015,"shock":-3.01,"pnl":{"no hedge":-419.057184,"long 100x 405-put":-355.335316,"long 100x 420-put":-311.847681,"long 100x 429-put":-260.407938,"long 100x 439-put":-189.678793,"long 100x 453-put":0.0}},{"date":"2020-04-21","year":2020,"shock":-3.04,"pnl":{"no hedge":-1092.385296,"long 100x 405-put":-798.426571,"long 100x 420-put":-653.298877,"long 100x 429-put":-509.242595,"long 100x 439-put":-342.565721,"long 100x 453-put":0.0}},{"date":"2020-02-25","year":2020,"shock":-3.03,"pnl":{"no hedge":-586.373623,"long 100x 405-put":-495.366785,"long 100x 420-put":-428.581275,"long 100x 429-put":-351.435423,"long 100x 439-put":-249.606883,"long 100x 453-put":0.0}},{"date":"2015-09-01","year":2015,"shock":-2.98,"pnl":{"no hedge":-471.801647,"long 100x 405-put":-409.863569,"long 100x 420-put":-360.388191,"long 100x 429-put":-300.498676,"long 100x 439-put":-217.722602,"long 100x 453-put":0.0}}],"hedges":["no hedge","long 100x 405-put","long 100x 420-put","long 100x 429-put","long 100x 439-put","long 100x 453-put"]};
+const fmtMoney = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
+const fmtPct = new Intl.NumberFormat('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+
+const state = { startYear: 2015, endYear: 2022, shockThreshold: -3, topN: 12, hedge: 'long 100x 429-put', sortBy: 'severity', showUnhedged: true, showHedged: true };
+const $ = (id) => document.getElementById(id);
+
+function setupControls() {
+  const years = [...new Set(DATA.events.map(d => d.year))].sort((a, b) => a - b);
+  for (const id of ['startYear', 'endYear']) {
+    const el = $(id);
+    years.forEach(y => { const opt = document.createElement('option'); opt.value = y; opt.textContent = y; el.appendChild(opt); });
+  }
+  $('startYear').value = state.startYear;
+  $('endYear').value = state.endYear;
+  DATA.hedges.forEach(label => { const opt = document.createElement('option'); opt.value = label; opt.textContent = label; $('hedgeSelect').appendChild(opt); });
+  $('hedgeSelect').value = state.hedge;
+
+  const sync = () => {
+    state.startYear = Math.min(+$('startYear').value, +$('endYear').value);
+    state.endYear = Math.max(+$('startYear').value, +$('endYear').value);
+    $('startYear').value = state.startYear;
+    $('endYear').value = state.endYear;
+    state.shockThreshold = +$('shockThreshold').value;
+    state.topN = +$('topN').value;
+    state.hedge = $('hedgeSelect').value;
+    state.sortBy = $('sortBy').value;
+    state.showUnhedged = $('showUnhedged').checked;
+    state.showHedged = $('showHedged').checked;
+    render();
+  };
+  ['startYear','endYear','shockThreshold','topN','hedgeSelect','sortBy','showUnhedged','showHedged'].forEach(id => $(id).addEventListener('input', sync));
+}
+
+function enrich(rec) {
+  const unhedged = rec.pnl['no hedge'];
+  const hedged = rec.pnl[state.hedge];
+  const coverage = unhedged === 0 ? 0 : 100 * (1 - Math.abs(hedged) / Math.abs(unhedged));
+  return { ...rec, unhedged, hedged, coverage };
+}
+
+function filteredEvents() {
+  let rows = DATA.events
+    .filter(d => d.year >= state.startYear && d.year <= state.endYear)
+    .filter(d => d.shock <= state.shockThreshold)
+    .map(enrich);
+  const sorters = {
+    severity: (a, b) => a.shock - b.shock,
+    date: (a, b) => a.date.localeCompare(b.date),
+    unhedged: (a, b) => a.unhedged - b.unhedged,
+    hedged: (a, b) => a.hedged - b.hedged,
+    coverage: (a, b) => b.coverage - a.coverage,
+  };
+  rows.sort(sorters[state.sortBy]);
+  return rows.slice(0, state.topN);
+}
+
+function tailMetrics(rows, key) {
+  if (!rows.length) return { var95: 0, cvar95: 0, worst: 0 };
+  const losses = rows.map(r => Math.max(0, -r[key])).sort((a, b) => b - a);
+  const idx = Math.max(0, Math.ceil(0.05 * losses.length) - 1);
+  const cvar = losses.slice(0, idx + 1).reduce((a, b) => a + b, 0) / (idx + 1);
+  return { var95: losses[idx], cvar95: cvar, worst: losses[0] };
+}
+
+function median(values) {
+  if (!values.length) return 0;
+  const x = values.slice().sort((a, b) => a - b);
+  const mid = Math.floor(x.length / 2);
+  return x.length % 2 ? x[mid] : (x[mid - 1] + x[mid]) / 2;
+}
+
+function renderKpis(rows) {
+  const u = tailMetrics(rows, 'unhedged');
+  const h = tailMetrics(rows, 'hedged');
+  const worstShock = rows.length ? Math.min(...rows.map(r => r.shock)) : 0;
+  const medCov = median(rows.map(r => r.coverage));
+  const items = [
+    ['Events', rows.length, `${state.startYear}-${state.endYear}`],
+    ['Worst shock', `${fmtPct.format(worstShock)}%`, 'single-day SPY move'],
+    ['Unhedged VaR', fmtMoney.format(u.var95), 'historical 95%'],
+    ['Hedged VaR', fmtMoney.format(h.var95), state.hedge],
+    ['Median coverage', `${fmtPct.format(medCov)}%`, 'loss reduction'],
+  ];
+  $('kpis').innerHTML = items.map(([name, num, hint]) => `<div class="kpi"><div class="name">${name}</div><div class="num">${num}</div><div class="hint">${hint}</div></div>`).join('');
+}
+
+function empty(target) { target.innerHTML = '<div class="empty">No events match the current filters.</div>'; }
+
+function renderBars(rows) {
+  const target = $('barChart');
+  if (!rows.length) return empty(target);
+  const width = 820, margin = { left: 110, right: 72, top: 18, bottom: 34 };
+  const rowH = 34, height = margin.top + margin.bottom + rows.length * rowH;
+  const maxLoss = Math.max(1, ...rows.flatMap(r => [Math.abs(r.unhedged), Math.abs(r.hedged)]));
+  const plotW = width - margin.left - margin.right;
+  const barH = (state.showUnhedged && state.showHedged) ? 10 : 16;
+  const x = v => margin.left + (Math.abs(v) / maxLoss) * plotW;
+  const lines = [];
+  const ticks = [0, 0.25, 0.5, 0.75, 1].map(t => Math.round(maxLoss * t));
+  ticks.forEach(t => {
+    const xx = margin.left + (t / maxLoss) * plotW;
+    lines.push(`<line class="gridline" x1="${xx}" x2="${xx}" y1="${margin.top}" y2="${height - margin.bottom}"/>`);
+    lines.push(`<text class="tick" x="${xx}" y="${height - 12}" text-anchor="middle">${Math.round(t/1000)}k</text>`);
+  });
+  rows.forEach((r, i) => {
+    const y = margin.top + i * rowH + rowH / 2;
+    lines.push(`<text class="event-label" x="${margin.left - 10}" y="${y + 4}" text-anchor="end">${r.date}</text>`);
+    if (state.showUnhedged) {
+      const y0 = y - (state.showHedged ? 9 : 8);
+      lines.push(`<rect x="${margin.left}" y="${y0}" width="${x(r.unhedged) - margin.left}" height="${barH}" rx="3" fill="var(--red)"/>`);
+    }
+    if (state.showHedged) {
+      const y1 = y + (state.showUnhedged ? 3 : -8);
+      lines.push(`<rect x="${margin.left}" y="${y1}" width="${x(r.hedged) - margin.left}" height="${barH}" rx="3" fill="var(--green)"/>`);
+    }
+    const labelValue = state.showHedged ? r.hedged : r.unhedged;
+    lines.push(`<text class="loss-label" x="${Math.min(width - margin.right + 6, x(labelValue) + 8)}" y="${y + 4}">${fmtMoney.format(Math.abs(labelValue))}</text>`);
+  });
+  target.innerHTML = `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Stress replay loss bars">${lines.join('')}</svg>`;
+}
+
+function renderTimeline(rows) {
+  const target = $('timelineChart');
+  if (!rows.length) return empty(target);
+  const width = 520, height = 310, margin = { left: 48, right: 24, top: 18, bottom: 44 };
+  const dates = rows.map(r => new Date(r.date + 'T00:00:00'));
+  const minT = Math.min(...dates.map(d => d.getTime()));
+  const maxT = Math.max(...dates.map(d => d.getTime()));
+  const minShock = Math.min(-12, ...rows.map(r => r.shock));
+  const maxShock = -3;
+  const x = d => margin.left + ((d.getTime() - minT) / Math.max(1, maxT - minT)) * (width - margin.left - margin.right);
+  const y = s => margin.top + ((maxShock - s) / (maxShock - minShock)) * (height - margin.top - margin.bottom);
+  const bits = [];
+  [-12, -9, -6, -3].forEach(t => {
+    const yy = y(t);
+    bits.push(`<line class="gridline" x1="${margin.left}" x2="${width - margin.right}" y1="${yy}" y2="${yy}"/>`);
+    bits.push(`<text class="tick" x="${margin.left - 8}" y="${yy + 4}" text-anchor="end">${t}%</text>`);
+  });
+  const years = [...new Set(rows.map(r => r.year))].sort((a,b)=>a-b);
+  years.forEach(yr => {
+    const d = new Date(`${yr}-07-01T00:00:00`);
+    const xx = x(d);
+    if (xx >= margin.left && xx <= width - margin.right) bits.push(`<text class="tick" x="${xx}" y="${height - 18}" text-anchor="middle">${yr}</text>`);
+  });
+  rows.forEach(r => {
+    const d = new Date(r.date + 'T00:00:00');
+    const radius = 5 + Math.min(8, Math.abs(r.unhedged) / 700);
+    const color = r.shock <= -8 ? 'var(--red)' : r.shock <= -5 ? 'var(--amber)' : 'var(--blue)';
+    bits.push(`<circle cx="${x(d)}" cy="${y(r.shock)}" r="${radius}" fill="${color}" opacity="0.88"><title>${r.date}: ${fmtPct.format(r.shock)}%, ${fmtMoney.format(r.unhedged)}</title></circle>`);
+  });
+  target.innerHTML = `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Event timeline">${bits.join('')}</svg>`;
+}
+
+function renderCoverage(rows) {
+  const target = $('coverageChart');
+  if (!rows.length) return empty(target);
+  const width = 820, height = 240, margin = { left: 48, right: 24, top: 16, bottom: 62 };
+  const plotW = width - margin.left - margin.right;
+  const plotH = height - margin.top - margin.bottom;
+  const barW = Math.max(8, plotW / rows.length * 0.62);
+  const bits = [];
+  [0, 25, 50, 75, 100].forEach(t => {
+    const yy = margin.top + (1 - t / 100) * plotH;
+    bits.push(`<line class="gridline" x1="${margin.left}" x2="${width - margin.right}" y1="${yy}" y2="${yy}"/>`);
+    bits.push(`<text class="tick" x="${margin.left - 8}" y="${yy + 4}" text-anchor="end">${t}%</text>`);
+  });
+  rows.forEach((r, i) => {
+    const cx = margin.left + (i + 0.5) * plotW / rows.length;
+    const cov = Math.max(0, Math.min(100, r.coverage));
+    const h = cov / 100 * plotH;
+    const y = margin.top + plotH - h;
+    bits.push(`<rect x="${cx - barW/2}" y="${y}" width="${barW}" height="${h}" rx="3" fill="var(--green)" opacity="0.9"><title>${r.date}: ${fmtPct.format(r.coverage)}%</title></rect>`);
+    bits.push(`<text class="tick" x="${cx}" y="${height - 34}" text-anchor="middle" transform="rotate(-45 ${cx} ${height - 34})">${r.date.slice(5)}</text>`);
+  });
+  target.innerHTML = `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Hedge coverage chart">${bits.join('')}</svg>`;
+}
+
+function renderTable(rows) {
+  const tbl = $('eventTable');
+  if (!rows.length) { tbl.innerHTML = '<tbody><tr><td>No events match the current filters.</td></tr></tbody>'; return; }
+  const head = '<thead><tr><th>Date</th><th>Year</th><th>Shock</th><th>Unhedged PnL</th><th>Hedged PnL</th><th>Coverage</th></tr></thead>';
+  const body = rows.map(r => `<tr><td>${r.date}</td><td>${r.year}</td><td class="num">${fmtPct.format(r.shock)}%</td><td class="num">${fmtMoney.format(r.unhedged)}</td><td class="num">${fmtMoney.format(r.hedged)}</td><td class="num">${fmtPct.format(r.coverage)}%</td></tr>`).join('');
+  tbl.innerHTML = head + '<tbody>' + body + '</tbody>';
+}
+
+function render() {
+  $('yearValue').textContent = `${state.startYear}-${state.endYear}`;
+  $('shockValue').textContent = `return <= ${fmtPct.format(state.shockThreshold)}%`;
+  $('topValue').textContent = `${state.topN}`;
+  const rows = filteredEvents();
+  $('subtitle').textContent = `${rows.length} event(s), hedge overlay: ${state.hedge}`;
+  $('barCaption').textContent = state.showHedged ? 'red = unhedged, green = selected hedge' : 'red = unhedged';
+  $('tableCaption').textContent = `${rows.length} rows`;
+  renderKpis(rows);
+  renderBars(rows);
+  renderTimeline(rows);
+  renderCoverage(rows);
+  renderTable(rows);
+}
+
+setupControls();
+render();
+</script>
+</body>
+</html>
