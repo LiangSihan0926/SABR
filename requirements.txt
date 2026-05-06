@@ -6,6 +6,8 @@ scipy>=1.15,<2.0
 pandas>=2.3,<3.0
 matplotlib>=3.10,<4.0
 pyarrow>=20.0          # required for parquet I/O
+pillow>=10.0           # GIF writer for the animated SABR demo
+plotly>=5.0            # standalone HTML for the interactive smile/timeseries explorer
 
 # Notebook execution (only needed if you want to re-run .ipynb files)
 jupyter>=1.1
