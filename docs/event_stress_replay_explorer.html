@@ -5,17 +5,18 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Event Stress Replay Explorer</title>
 <style>
+
 :root {
-  --bg: #0f1419;
-  --panel: #171d24;
-  --panel-2: #202832;
-  --line: #31404f;
-  --text: #e8eef5;
-  --muted: #93a3b5;
-  --red: #e35b52;
-  --amber: #f0b84f;
-  --green: #26b59a;
-  --blue: #71a7ff;
+  --bg: #f6f8fb;
+  --panel: #ffffff;
+  --panel-2: #eef3f8;
+  --line: #d9e2ec;
+  --text: #16202a;
+  --muted: #5f6f82;
+  --red: #d94f45;
+  --amber: #d99a26;
+  --green: #1f9d84;
+  --blue: #3c78d8;
   --white: #ffffff;
 }
 * { box-sizing: border-box; }
@@ -29,7 +30,7 @@ body {
 .shell { display: grid; grid-template-columns: 310px minmax(760px, 1fr); min-height: 100vh; }
 .sidebar {
   border-right: 1px solid var(--line);
-  background: #151a21;
+  background: #ffffff;
   padding: 28px 24px;
   position: sticky;
   top: 0;
@@ -37,7 +38,7 @@ body {
   overflow: auto;
 }
 .brand { font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); margin-bottom: 8px; }
-h1 { font-size: 28px; line-height: 1.08; margin: 0 0 22px; font-weight: 760; }
+h1 { font-size: 28px; line-height: 1.08; margin: 0 0 22px; font-weight: 760; color: var(--text); }
 .control { padding: 16px 0; border-top: 1px solid var(--line); }
 .control:first-of-type { border-top: 0; }
 label { display: flex; justify-content: space-between; gap: 12px; color: var(--muted); font-size: 13px; margin-bottom: 8px; }
@@ -46,7 +47,7 @@ select, input[type="range"] { width: 100%; }
 select {
   appearance: none;
   background: var(--panel-2);
-  border: 1px solid #3a4858;
+  border: 1px solid #c9d5e2;
   color: var(--text);
   border-radius: 7px;
   padding: 11px 12px;
@@ -60,30 +61,30 @@ input[type="range"] { accent-color: var(--green); }
 .note { color: var(--muted); font-size: 12px; line-height: 1.45; margin-top: 18px; }
 .main { padding: 30px; overflow: auto; }
 .topline { display: flex; justify-content: space-between; gap: 20px; align-items: flex-end; margin-bottom: 20px; }
-.topline h2 { margin: 0; font-size: 24px; }
+.topline h2 { margin: 0; font-size: 24px; color: var(--text); }
 .sub { color: var(--muted); margin-top: 6px; font-size: 14px; }
 .kpis { display: grid; grid-template-columns: repeat(5, minmax(140px, 1fr)); gap: 12px; margin-bottom: 18px; }
-.kpi { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px 14px 12px; min-height: 86px; }
+.kpi { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px 14px 12px; min-height: 86px; box-shadow: 0 1px 2px rgba(16,24,40,0.04); }
 .kpi .name { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; }
-.kpi .num { margin-top: 10px; font-size: 24px; font-weight: 740; font-variant-numeric: tabular-nums; }
+.kpi .num { margin-top: 10px; font-size: 24px; font-weight: 740; font-variant-numeric: tabular-nums; color: var(--text); }
 .kpi .hint { color: var(--muted); font-size: 12px; margin-top: 4px; }
 .grid { display: grid; grid-template-columns: minmax(0, 1.52fr) minmax(360px, 0.9fr); gap: 18px; }
-.card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 16px; min-width: 0; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 16px; min-width: 0; box-shadow: 0 1px 2px rgba(16,24,40,0.04); }
 .card h3 { margin: 0 0 12px; font-size: 15px; color: var(--text); }
 .card-title { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
 .card-title span { color: var(--muted); font-size: 12px; }
 svg { width: 100%; display: block; }
 .axis text, .tick { fill: var(--muted); font-size: 11px; }
-.axis line, .gridline { stroke: #2f3d4a; stroke-width: 1; }
-.zero { stroke: #556575; stroke-width: 1.2; }
-.event-label { fill: #c8d3df; font-size: 11px; }
-.loss-label { fill: #e8eef5; font-size: 11px; font-variant-numeric: tabular-nums; }
+.axis line, .gridline { stroke: #dbe4ee; stroke-width: 1; }
+.zero { stroke: #9dadbd; stroke-width: 1.2; }
+.event-label { fill: #314050; font-size: 11px; }
+.loss-label { fill: #16202a; font-size: 11px; font-variant-numeric: tabular-nums; font-weight: 650; }
 .table-wrap { max-height: 420px; overflow: auto; border: 1px solid var(--line); border-radius: 8px; }
-table { border-collapse: collapse; width: 100%; min-width: 620px; font-size: 13px; }
-th { position: sticky; top: 0; background: #202832; color: var(--muted); text-align: left; font-weight: 620; }
-th, td { padding: 10px 12px; border-bottom: 1px solid #2a3643; white-space: nowrap; }
+table { border-collapse: collapse; width: 100%; min-width: 620px; font-size: 13px; background: #ffffff; }
+th { position: sticky; top: 0; background: #eef3f8; color: var(--muted); text-align: left; font-weight: 620; }
+th, td { padding: 10px 12px; border-bottom: 1px solid #e3eaf2; white-space: nowrap; }
 td.num { text-align: right; font-variant-numeric: tabular-nums; }
-.empty { color: var(--muted); padding: 80px 20px; text-align: center; border: 1px dashed #3a4858; border-radius: 8px; }
+.empty { color: var(--muted); padding: 80px 20px; text-align: center; border: 1px dashed #c9d5e2; border-radius: 8px; }
 .footer { color: var(--muted); font-size: 12px; margin-top: 18px; }
 @media (max-width: 1120px) {
   .shell { grid-template-columns: 1fr; }
@@ -91,6 +92,7 @@ td.num { text-align: right; font-variant-numeric: tabular-nums; }
   .grid { grid-template-columns: 1fr; }
   .kpis { grid-template-columns: repeat(2, 1fr); }
 }
+
 </style>
 </head>
 <body>
@@ -174,7 +176,7 @@ td.num { text-align: right; font-variant-numeric: tabular-nums; }
       </div>
     </section>
 
-    <div class="footer">Local artifact: event_stress_replay_explorer.html. Companion data extract: event_stress_replay_data.csv.</div>
+    <div class="footer">Local artifact: event_stress_replay_explorer_light.html. Companion data extract: event_stress_replay_data.csv.</div>
   </main>
 </div>
 
