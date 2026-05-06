@@ -18,3 +18,7 @@ from .model_compare import (
     predict_sticky_strike, predict_sticky_moneyness,
     predict_local_vol, predict_sabr, rmse,
 )
+from .event_stress import (
+    find_stress_events, label_event_regime,
+    MarketState, portfolio_value, replay_scenarios, hedge_coverage,
+)
