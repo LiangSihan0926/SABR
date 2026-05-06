@@ -43,7 +43,8 @@ plt.rcParams.update({
 
 from src.event_stress import (
     find_stress_events,
-    MarketState, hedge_coverage,
+    MarketState, hedge_coverage, replay_scenarios,
+    var_cvar, hedge_cost, greek_predicted_pnl,
 )
 from src.data_loader import load_fred_yields, build_smile
 from src.calibration import calibrate_smile_panel
@@ -263,6 +264,174 @@ plt.tight_layout()
 plt.savefig(os.path.join(OUT_DIR, "fig25_portfolio_stress_replay.png"))
 plt.close()
 print(f"  -> {OUT_DIR}/fig25_portfolio_stress_replay.png")
+
+
+# ============================================================
+# fig26 - Distributional risk metrics (VaR / CVaR) using
+#         the FULL 32-event library (not just top 8)
+# ============================================================
+print("\nfig26_var_cvar_distribution ...")
+
+# Build stress states from ALL 32 events (where calibration succeeds)
+print("  Calibrating SABR on each of the 32 events...")
+all_stresses = []
+for ev_date, ev_row in events.iterrows():
+    try:
+        sm = build_smile(spy, rates, ev_date.strftime("%Y-%m-%d"), dte=30)
+        fit = calibrate_smile_panel(sm, beta=0.5)
+    except Exception:
+        continue
+    shock = ev_row["return_pct"] / 100.0
+    all_stresses.append(MarketState(
+        F=F_today * (1.0 + shock), T=T_today, r=r_today,
+        alpha=fit.alpha, beta=0.5, rho=fit.rho, nu=fit.nu,
+        label=f"{ev_date.date()}",
+    ))
+print(f"  Successfully built {len(all_stresses)} stress scenarios.")
+
+cov_full = hedge_coverage(position, hedge, baseline, all_stresses)
+
+# Distributional metrics
+unh_var, unh_cvar = var_cvar(cov_full["unhedged_pnl"].to_numpy(),
+                              confidence=0.95)
+hed_var, hed_cvar = var_cvar(cov_full["hedged_pnl"].to_numpy(),
+                              confidence=0.95)
+
+print(f"  Unhedged 95% VaR = ${unh_var:,.0f}, "
+      f"95% CVaR = ${unh_cvar:,.0f}")
+print(f"  Hedged   95% VaR = ${hed_var:,.0f}, "
+      f"95% CVaR = ${hed_cvar:,.0f}")
+
+# Plot two panels: PnL CDF + worst-decile zoom
+fig, axes = plt.subplots(1, 2, figsize=(13, 4.5))
+
+# Left: empirical CDF of losses
+ax = axes[0]
+unh_losses = -cov_full["unhedged_pnl"].sort_values().to_numpy()
+hed_losses = -cov_full["hedged_pnl"].sort_values().to_numpy()
+unh_losses = np.sort(unh_losses)
+hed_losses = np.sort(hed_losses)
+n = len(unh_losses)
+prob = np.arange(1, n + 1) / n
+
+ax.step(unh_losses, prob, where="post", color="C3", lw=1.6,
+        label="unhedged")
+ax.step(hed_losses, prob, where="post", color="C2", lw=1.6,
+        label=f"+ long 100$\\times$ {K_hedge}-put hedge")
+ax.axhline(0.95, color="k", ls="--", lw=0.6)
+ax.axvline(unh_var, color="C3", ls=":", lw=1, alpha=0.6)
+ax.axvline(hed_var, color="C2", ls=":", lw=1, alpha=0.6)
+ax.set_xlabel("Loss ($, positive = loss)")
+ax.set_ylabel("Empirical probability")
+ax.set_title(f"Loss CDF across {len(cov_full)} historical events")
+ax.legend(loc="lower right", fontsize=9)
+
+# Right: tail comparison bar chart
+ax = axes[1]
+metrics = ["95% VaR", "95% CVaR", "Worst case"]
+unh_vals = [unh_var, unh_cvar, -cov_full["unhedged_pnl"].min()]
+hed_vals = [hed_var, hed_cvar, -cov_full["hedged_pnl"].min()]
+xpos = np.arange(len(metrics))
+w = 0.38
+ax.bar(xpos - w/2, np.array(unh_vals)/1000, w,
+       color="C3", alpha=0.8, label="unhedged")
+ax.bar(xpos + w/2, np.array(hed_vals)/1000, w,
+       color="C2", alpha=0.8, label="hedged")
+ax.set_xticks(xpos)
+ax.set_xticklabels(metrics)
+ax.set_ylabel("Loss ($ thousands)")
+ax.set_title("Tail metrics  (bar = loss; lower = safer)")
+ax.legend(loc="upper left", fontsize=9)
+for i, (u, h) in enumerate(zip(unh_vals, hed_vals)):
+    ax.annotate(f"${u/1000:.1f}k", xy=(i - w/2, u/1000),
+                xytext=(0, 3), textcoords="offset points",
+                ha="center", fontsize=8, color="C3")
+    ax.annotate(f"${h/1000:.1f}k", xy=(i + w/2, h/1000),
+                xytext=(0, 3), textcoords="offset points",
+                ha="center", fontsize=8, color="C2")
+
+plt.suptitle(f"Empirical risk distribution from the {len(cov_full)}-event library",
+             y=1.02, fontsize=10)
+plt.tight_layout()
+plt.savefig(os.path.join(OUT_DIR, "fig26_var_cvar_distribution.png"))
+plt.close()
+print(f"  -> {OUT_DIR}/fig26_var_cvar_distribution.png")
+
+
+# ============================================================
+# fig27 - SABR full repricing vs Greek-only second-order
+#         Taylor approximation
+# ============================================================
+print("\nfig27_greek_vs_sabr ...")
+
+greek_df = greek_predicted_pnl(position, baseline, all_stresses)
+greek_df["err_abs"] = (greek_df["greek_pnl"] - greek_df["sabr_pnl"]).abs()
+greek_df["err_pct"] = (greek_df["greek_pnl"] - greek_df["sabr_pnl"]) / \
+                      greek_df["sabr_pnl"].abs() * 100.0
+
+print(f"  Mean abs error of Greek-only PnL vs SABR: "
+      f"${greek_df['err_abs'].mean():,.0f}")
+print(f"  Median signed err pct: {greek_df['err_pct'].median():.1f}%  "
+      f"(positive = Greek overpredicts)")
+
+fig, axes = plt.subplots(1, 2, figsize=(13, 4.5))
+
+# Left: scatter SABR vs Greek
+ax = axes[0]
+ax.scatter(greek_df["sabr_pnl"]/1000, greek_df["greek_pnl"]/1000,
+           s=30, color="C0", alpha=0.7, edgecolor="black")
+mn = min(greek_df["sabr_pnl"].min(), greek_df["greek_pnl"].min()) / 1000
+mx = max(greek_df["sabr_pnl"].max(), greek_df["greek_pnl"].max()) / 1000
+ax.plot([mn, mx], [mn, mx], "k--", lw=0.8, alpha=0.6,
+        label="$y=x$ (perfect)")
+ax.set_xlabel("Full SABR repricing PnL ($ thousands)")
+ax.set_ylabel("Greek-only $\\Delta + \\tfrac{1}{2}\\Gamma\\,\\Delta F^2 + \\nu\\,\\Delta\\sigma$ PnL ($ thousands)")
+ax.set_title(f"Greek bench vs SABR truth, {len(greek_df)} events")
+ax.legend(loc="lower right", fontsize=9)
+
+# Right: error vs spot return  (does Greek systematically over/underpredict for big moves?)
+ax = axes[1]
+ax.scatter(greek_df["return_pct"], greek_df["err_abs"]/1000,
+           s=30, color="C3", alpha=0.7, edgecolor="black")
+ax.axhline(0, color="k", lw=0.6)
+ax.set_xlabel("Spot return (%)")
+ax.set_ylabel("$|$Greek $-$ SABR$|$  ($ thousands)")
+ax.set_title("Greek-bench error grows with shock size")
+
+plt.tight_layout()
+plt.savefig(os.path.join(OUT_DIR, "fig27_greek_vs_sabr.png"))
+plt.close()
+print(f"  -> {OUT_DIR}/fig27_greek_vs_sabr.png")
+
+
+# ============================================================
+# Cost-aware hedge analysis
+# ============================================================
+print("\nCost-aware hedge analysis ...")
+hedge_premium = hedge_cost(hedge, baseline)
+position_credit = hedge_cost(position, baseline)   # negative = credit received
+print(f"  Hedge cost (paid today): ${hedge_premium:,.2f}")
+print(f"  Position credit received today: ${-position_credit:,.2f}")
+
+# Net P&L if event occurs (apply hedge cost as a fixed expense paid today)
+net_pnl_event = cov_full["hedged_pnl"] - 0.0  # hedge premium already netted
+                                              # in stress_value via portfolio_value
+# Breakeven event probability:
+# Hedge buys you (median coverage) loss reduction. If event probability is p,
+# expected savings from hedge = p * coverage_in_dollars.
+# Hedge cost paid every period = hedge_premium.
+median_savings = (cov_full["unhedged_pnl"].abs() -
+                  cov_full["hedged_pnl"].abs()).median()
+breakeven_p = hedge_premium / max(median_savings, 1e-9)
+n_trading_days = spy["QUOTE_DATE"].nunique()
+historical_p = len(events) / n_trading_days
+print(f"  Median per-event loss reduction from hedge: "
+      f"${median_savings:,.0f}")
+print(f"  Breakeven event probability:  {breakeven_p*100:.2f}%")
+print(f"  Historical event frequency:   {historical_p*100:.2f}%  "
+      f"(={len(events)} events in {n_trading_days} days)")
+print(f"  Hedge is rational if you believe future event freq > "
+      f"{breakeven_p*100:.2f}%  (historical = {historical_p*100:.2f}%)")
 
 
 # ============================================================

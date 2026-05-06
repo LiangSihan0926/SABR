@@ -199,3 +199,106 @@ def hedge_coverage(position, hedge, baseline: MarketState, stresses):
     denom = unhedged["pnl"].abs().replace(0.0, np.nan)
     out["hedge_coverage_pct"] = 100.0 * (1.0 - hedged["pnl"].abs() / denom)
     return out
+
+
+# ============================================================
+# C. Distributional risk metrics + cost-awareness + Greek
+#    bench-mark prediction
+# ============================================================
+def var_cvar(pnl_array, confidence=0.95):
+    """Historical VaR and CVaR (expected shortfall).
+
+    Treats ``pnl_array`` as an empirical loss distribution
+    (negative entries are losses). Returns both VaR and CVaR as
+    *positive* numbers in the same currency unit as the input.
+
+    With small samples (n<20) these are point estimates, not
+    converged tails.
+    """
+    losses = -np.asarray(pnl_array, dtype=float)
+    losses = losses[np.isfinite(losses)]
+    if len(losses) == 0:
+        return np.nan, np.nan
+    losses_sorted = np.sort(losses)[::-1]   # descending
+    n = len(losses_sorted)
+    var_index = max(0, int(np.ceil((1.0 - confidence) * n)) - 1)
+    var = float(losses_sorted[var_index])
+    cvar = float(losses_sorted[: var_index + 1].mean())
+    return var, cvar
+
+
+def hedge_cost(hedge, baseline: MarketState):
+    """Up-front mark-to-market cost of opening ``hedge`` today.
+
+    For a long-leg hedge (positive qty) this is the premium paid
+    today; for a short-leg hedge it is negative (premium received).
+    """
+    return portfolio_value(hedge, baseline)
+
+
+def greek_predicted_pnl(position, baseline: MarketState,
+                        stresses, sigma_bump_from_atm=True):
+    """Predict each scenario's PnL using a *Greek-only* second-order
+    Taylor approximation around ``baseline``, instead of full SABR
+    repricing.
+
+    Per leg, prediction is
+        dV ~ Delta * dF + 0.5 * Gamma * dF**2 + Vega * dSigma
+    with Delta/Gamma/Vega evaluated at today's SABR-implied vol at the
+    leg's strike, and dSigma the change in SABR vol at that same
+    strike between baseline and stress states.
+
+    Returns DataFrame with one row per stress state:
+        label, return_pct, sabr_pnl, greek_pnl, greek_minus_sabr.
+    """
+    from .black import black_call, black_put, black_vega
+    from scipy.stats import norm
+
+    def _delta(F, K, sigma, T, r, opt_type):
+        sqrtT = np.sqrt(T)
+        d1 = (np.log(F / K) + 0.5 * sigma ** 2 * T) / (sigma * sqrtT)
+        D = np.exp(-r * T)
+        if opt_type.upper().startswith("C"):
+            return D * norm.cdf(d1)
+        return D * (norm.cdf(d1) - 1.0)
+
+    def _gamma(F, K, sigma, T, r):
+        sqrtT = np.sqrt(T)
+        d1 = (np.log(F / K) + 0.5 * sigma ** 2 * T) / (sigma * sqrtT)
+        D = np.exp(-r * T)
+        return D * norm.pdf(d1) / (F * sigma * sqrtT)
+
+    # Per-leg today greeks
+    F0, T0, r0 = baseline.F, baseline.T, baseline.r
+    leg_greeks = []
+    for opt in position:
+        K = float(opt["strike"])
+        sigma0 = float(sabr_vol(np.array([K]), F0, T0,
+                                baseline.alpha, baseline.beta,
+                                baseline.rho, baseline.nu)[0])
+        d  = _delta(F0, K, sigma0, T0, r0, opt["type"])
+        g  = _gamma(F0, K, sigma0, T0, r0)
+        v  = float(black_vega(F0, K, sigma0, T0, r0))
+        leg_greeks.append((K, opt["type"], opt["qty"], sigma0, d, g, v))
+
+    # Full SABR PnL once (truth)
+    sabr_pnl_df = replay_scenarios(position, baseline, stresses)
+
+    rows = []
+    for s, sabr_row in zip(stresses, sabr_pnl_df.itertuples(index=False)):
+        dF = s.F - F0
+        greek_pnl = 0.0
+        for (K, typ, qty, sigma0, d, g, v) in leg_greeks:
+            sigma_s = float(sabr_vol(np.array([K]), s.F, s.T,
+                                     s.alpha, s.beta, s.rho, s.nu)[0])
+            dSigma = sigma_s - sigma0
+            dV = d * dF + 0.5 * g * dF * dF + v * dSigma
+            greek_pnl += float(qty) * float(dV)
+        rows.append({
+            "label":            sabr_row.label,
+            "return_pct":       sabr_row.return_pct,
+            "sabr_pnl":         sabr_row.pnl,
+            "greek_pnl":        greek_pnl,
+            "greek_minus_sabr": greek_pnl - sabr_row.pnl,
+        })
+    return pd.DataFrame(rows)
