@@ -23,9 +23,11 @@ from src.interactive_viz import (
     make_smile_animation_gif,
     make_interactive_smile_html,
     make_interactive_timeseries_html,
+    make_interactive_stress_html,
 )
-from src.event_stress import find_stress_events
-from src.data_loader import load_fred_yields  # for parity, not needed below
+from src.event_stress import find_stress_events, MarketState
+from src.data_loader import load_fred_yields, build_smile
+from src.calibration import calibrate_smile_panel
 
 
 # ---------------------------------------------------------------
@@ -59,7 +61,34 @@ make_interactive_timeseries_html(ts_path, cal, events.index,
                                   ticker="SPY", dte=30, beta=0.5)
 print(f"  -> {ts_path}  ({os.path.getsize(ts_path)/1024:.0f} KB)")
 
-print("\nAll three interactive deliverables built.")
+# ---------------------------------------------------------------
+# (D) Interactive stress-replay explorer
+# ---------------------------------------------------------------
+print("\nBuilding docs/interactive_stress.html ...")
+rates = load_fred_yields(DATA_DIR).ffill()
+today_date  = spy["QUOTE_DATE"].max()
+today_smile = build_smile(spy, rates, today_date.strftime("%Y-%m-%d"), dte=30)
+today_fit   = calibrate_smile_panel(today_smile, beta=0.5)
+F_today, T_today, r_today = (today_smile.attrs["F"],
+                              today_smile.attrs["expire_dte"] / 365.25,
+                              today_smile.attrs["r"])
+baseline = MarketState(
+    F=F_today, T=T_today, r=r_today,
+    alpha=today_fit.alpha, beta=0.5,
+    rho=today_fit.rho, nu=today_fit.nu,
+    label=f"today ({today_date.date()})",
+)
+stress_path = os.path.join(ROOT, "docs", "interactive_stress.html")
+make_interactive_stress_html(
+    stress_path, events, baseline,
+    today_F=F_today, today_T=T_today, today_r=r_today,
+    spy_options=spy, rates_df=rates,
+)
+print(f"  -> {stress_path}  ({os.path.getsize(stress_path)/1024:.0f} KB)")
+
+
+print("\nAll four interactive deliverables built.")
 print("To preview locally:")
 print(f"  open {html_path}")
 print(f"  open {ts_path}")
+print(f"  open {stress_path}")

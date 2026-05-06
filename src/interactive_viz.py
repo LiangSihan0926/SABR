@@ -335,6 +335,216 @@ def make_interactive_timeseries_html(
 
 
 # ============================================================
+# (D) Interactive stress-replay explorer
+# ============================================================
+def make_interactive_stress_html(
+    out_path: str,
+    events_df: pd.DataFrame,
+    baseline_state,
+    today_F: float,
+    today_T: float,
+    today_r: float,
+    spy_options: pd.DataFrame,
+    rates_df: pd.DataFrame,
+    short_strike_pct: float = 0.95,
+    n_contracts: int = 100,
+    hedge_strike_grid: tuple = (0.85, 0.88, 0.90, 0.92, 0.95),
+    beta: float = 0.5,
+):
+    """Build a single-page Plotly explorer for the event-anchored
+    stress replay. The user picks the hedge strike via a slider and
+    sees:
+
+      - one bar per historical event showing unhedged vs hedged PnL
+      - a callout text in the figure title with the resulting 95% VaR,
+        CVaR, worst-case loss, and median hedge coverage
+
+    Inputs
+    ------
+    events_df       : output of find_stress_events
+    baseline_state  : MarketState (today's calibrated SABR + market)
+    today_F/T/r     : market state today
+    spy_options     : SPY options DataFrame (cache/spy_options_filtered)
+    rates_df        : FRED yield DataFrame (forward-filled)
+    short_strike_pct: e.g. 0.95 -> short the 95%-strike put
+    hedge_strike_grid: tuple of hedge strike % values to enumerate
+
+    The function calibrates SABR on each event date once, then
+    re-prices the (short put + long hedge) portfolio for each
+    (event, hedge_strike_pct) combination. Output is one standalone
+    HTML page.
+    """
+    from .data_loader import build_smile
+    from .calibration import calibrate_smile_panel
+    from .event_stress import (
+        MarketState, replay_scenarios, hedge_coverage,
+        var_cvar, hedge_cost,
+    )
+
+    # 1. Build per-event MarketState list (calibrating SABR on event days)
+    print("  Calibrating SABR on each event for stress explorer ...")
+    stresses = []
+    event_labels = []
+    event_returns = []
+    for ev_date, ev_row in events_df.iterrows():
+        try:
+            sm = build_smile(spy_options, rates_df,
+                             ev_date.strftime("%Y-%m-%d"), dte=30)
+            fit = calibrate_smile_panel(sm, beta=beta)
+        except Exception:
+            continue
+        shock = ev_row["return_pct"] / 100.0
+        stresses.append(MarketState(
+            F=today_F * (1 + shock), T=today_T, r=today_r,
+            alpha=fit.alpha, beta=beta, rho=fit.rho, nu=fit.nu,
+            label=str(ev_date.date()),
+        ))
+        event_labels.append(str(ev_date.date()))
+        event_returns.append(shock * 100.0)
+
+    K_short = round(today_F * short_strike_pct)
+    position = [{"strike": K_short, "type": "P", "qty": -n_contracts}]
+
+    # Position-only baseline value once (constant across hedge variants)
+    pos_only_pnl = replay_scenarios(position, baseline_state, stresses)
+    unhedged_pnl = pos_only_pnl["pnl"].to_numpy()
+
+    # 2. Compute hedged variants per hedge strike
+    n_evt = len(stresses)
+    n_hedge = len(hedge_strike_grid) + 1   # +1 for "no hedge"
+    hedge_labels = ["no hedge"] + [f"long {n_contracts}x {int(today_F*p)}-put"
+                                    for p in hedge_strike_grid]
+
+    pnl_matrix    = np.zeros((n_hedge, n_evt))
+    cost_per_var  = np.zeros(n_hedge)
+    cov_per_var   = np.zeros(n_hedge)
+    var_per_var   = np.zeros(n_hedge)
+    cvar_per_var  = np.zeros(n_hedge)
+    worst_per_var = np.zeros(n_hedge)
+
+    for j, p in enumerate([None, *hedge_strike_grid]):
+        if p is None:
+            hedge = []
+        else:
+            K_h = round(today_F * p)
+            hedge = [{"strike": K_h, "type": "P", "qty": +n_contracts}]
+        if hedge:
+            res = hedge_coverage(position, hedge, baseline_state, stresses)
+            pnl_matrix[j] = res["hedged_pnl"].to_numpy()
+            cost_per_var[j] = hedge_cost(hedge, baseline_state)
+            cov_per_var[j] = float(np.nanmedian(res["hedge_coverage_pct"]))
+        else:
+            pnl_matrix[j] = unhedged_pnl
+            cost_per_var[j] = 0.0
+            cov_per_var[j] = 0.0
+        v, c = var_cvar(pnl_matrix[j], confidence=0.95)
+        var_per_var[j]   = v
+        cvar_per_var[j]  = c
+        worst_per_var[j] = -pnl_matrix[j].min()
+
+    # 3. Build Plotly figure with one frame per hedge variant
+    # Sort events by return (worst on the left)
+    order = np.argsort(event_returns)
+    event_labels_sorted  = [event_labels[i]  for i in order]
+    event_returns_sorted = [event_returns[i] for i in order]
+
+    def _bars(idx):
+        return go.Bar(
+            x=event_labels_sorted,
+            y=pnl_matrix[idx][order] / 1000.0,
+            marker_color=["#B31B1B" if idx == 0 else "#2E8B3D"
+                          for _ in event_labels_sorted],
+            hovertemplate=("<b>%{x}</b><br>"
+                            "PnL: $%{y:.2f}k<extra></extra>"),
+            name=hedge_labels[idx],
+        )
+
+    def _annotation(idx):
+        return (f"<b>{hedge_labels[idx]}</b><br>"
+                f"Hedge premium: ${cost_per_var[idx]:.2f}<br>"
+                f"95% VaR:  ${var_per_var[idx]:,.0f}<br>"
+                f"95% CVaR: ${cvar_per_var[idx]:,.0f}<br>"
+                f"Worst case: ${worst_per_var[idx]:,.0f}<br>"
+                f"Median coverage: {cov_per_var[idx]:.1f}%")
+
+    init_idx = 0
+    frames = [
+        go.Frame(
+            name=str(j),
+            data=[_bars(j)],
+            layout=go.Layout(annotations=[dict(
+                text=_annotation(j),
+                xref="paper", yref="paper",
+                x=1.0, y=1.0, xanchor="right", yanchor="top",
+                showarrow=False, align="right",
+                bgcolor="rgba(255,255,255,0.92)",
+                bordercolor="#888", borderwidth=1, borderpad=8,
+                font=dict(size=12, family="monospace"),
+            )]),
+        )
+        for j in range(n_hedge)
+    ]
+
+    fig = go.Figure(
+        data=[_bars(init_idx)],
+        frames=frames,
+    )
+    fig.update_layout(
+        title=dict(text=(f"<b>Stress replay explorer</b> &nbsp; "
+                          f"short {n_contracts}× {K_short}-put on SPY "
+                          f"30-DTE  (today F = {today_F:.0f}). "
+                          "Drag the slider to change the long-put hedge."),
+                   x=0.02, font=dict(size=13)),
+        xaxis=dict(title="Historical event (worst → least)", tickangle=-30),
+        yaxis=dict(title="Per-event PnL ($ thousands; negative = loss)"),
+        height=560, margin=dict(l=60, r=240, t=80, b=120),
+        annotations=[dict(
+            text=_annotation(init_idx),
+            xref="paper", yref="paper",
+            x=1.0, y=1.0, xanchor="right", yanchor="top",
+            showarrow=False, align="right",
+            bgcolor="rgba(255,255,255,0.92)",
+            bordercolor="#888", borderwidth=1, borderpad=8,
+            font=dict(size=12, family="monospace"),
+        )],
+        showlegend=False,
+        sliders=[{
+            "active": init_idx,
+            "currentvalue": {"prefix": "Hedge: ",
+                              "font": {"size": 13}},
+            "pad": {"b": 10, "t": 30},
+            "len": 0.85,
+            "x": 0.08,
+            "steps": [
+                {"args": [[str(j)], {"frame": {"duration": 0},
+                                      "mode": "immediate"}],
+                 "label": hedge_labels[j], "method": "animate"}
+                for j in range(n_hedge)
+            ],
+        }],
+    )
+
+    page = _wrap_html(
+        title="SABR Stress Replay Explorer",
+        intro=(f"<p>This page replays each of the {n_evt} historical SPY "
+               f"single-day drops of −3% or worse (2014–2023) onto a "
+               f"sample portfolio held <b>today</b> "
+               f"(F = {today_F:.0f}, T = 30 days). The position is a "
+               f"<b>short {n_contracts}× {K_short}-strike put</b>. "
+               "Drag the slider below to swap in different long-put "
+               "hedges (or no hedge); the per-event PnL bars and the "
+               "tail-risk readout in the upper-right update live. "
+               "Built by <code>src/interactive_viz.py</code>.</p>"),
+        bodies=[fig.to_html(full_html=False, include_plotlyjs="cdn",
+                            div_id="stress_plot")],
+    )
+    os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
+    with open(out_path, "w") as f:
+        f.write(page)
+    return out_path
+
+
+# ============================================================
 # Internal: tiny HTML wrapper
 # ============================================================
 def _wrap_html(title: str, intro: str, bodies: list) -> str:
