@@ -6,7 +6,8 @@
 > **Interactive demos**:
 > [SABR Smile Explorer](https://liangsihan0926.github.io/SABR/interactive_smile.html) ·
 > [Calibration Time Series](https://liangsihan0926.github.io/SABR/interactive_timeseries.html) ·
-> [Event Stress Replay](https://liangsihan0926.github.io/SABR/event_stress_replay_explorer.html)
+> [Stress Slider](https://liangsihan0926.github.io/SABR/interactive_stress.html) ·
+> [Stress Dashboard](https://liangsihan0926.github.io/SABR/event_stress_replay_explorer.html)
 > *(live sliders / hover-able charts; no Python install required)*
 
 
