@@ -348,7 +348,7 @@ def make_interactive_stress_html(
     rates_df: pd.DataFrame,
     short_strike_pct: float = 0.95,
     n_contracts: int = 100,
-    hedge_strike_grid: tuple = (0.85, 0.88, 0.90, 0.92, 0.95),
+    hedge_strike_grid: tuple = (0.80, 0.85, 0.88, 0.90, 0.92),
     beta: float = 0.5,
 ):
     """Build a single-page Plotly explorer for the event-anchored
@@ -448,78 +448,124 @@ def make_interactive_stress_html(
     event_labels_sorted  = [event_labels[i]  for i in order]
     event_returns_sorted = [event_returns[i] for i in order]
 
-    def _bars(idx):
+    def _unhedged_bar():
+        return go.Bar(
+            x=event_labels_sorted,
+            y=unhedged_pnl[order] / 1000.0,
+            marker_color="#B31B1B",
+            opacity=0.85,
+            name="unhedged (baseline)",
+            hovertemplate=("<b>%{x}</b><br>"
+                            "Unhedged: $%{y:.2f}k<extra></extra>"),
+        )
+
+    def _hedged_bar(idx):
         return go.Bar(
             x=event_labels_sorted,
             y=pnl_matrix[idx][order] / 1000.0,
-            marker_color=["#B31B1B" if idx == 0 else "#2E8B3D"
-                          for _ in event_labels_sorted],
+            marker_color="#2E8B3D",
+            opacity=0.85,
+            name=f"hedged ({hedge_labels[idx]})",
             hovertemplate=("<b>%{x}</b><br>"
-                            "PnL: $%{y:.2f}k<extra></extra>"),
-            name=hedge_labels[idx],
+                            "Hedged: $%{y:.2f}k<extra></extra>"),
         )
 
     def _annotation(idx):
+        # Compute live coverage & savings for richer readout
+        med_savings = float(np.nanmedian(
+            np.abs(unhedged_pnl) - np.abs(pnl_matrix[idx])
+        ))
         return (f"<b>{hedge_labels[idx]}</b><br>"
                 f"Hedge premium: ${cost_per_var[idx]:.2f}<br>"
-                f"95% VaR:  ${var_per_var[idx]:,.0f}<br>"
-                f"95% CVaR: ${cvar_per_var[idx]:,.0f}<br>"
-                f"Worst case: ${worst_per_var[idx]:,.0f}<br>"
-                f"Median coverage: {cov_per_var[idx]:.1f}%")
+                f"<br>"
+                f"<b>Unhedged risk:</b><br>"
+                f" 95% VaR:  ${var_per_var[0]:,.0f}<br>"
+                f" 95% CVaR: ${cvar_per_var[0]:,.0f}<br>"
+                f" Worst case: ${worst_per_var[0]:,.0f}<br>"
+                f"<br>"
+                f"<b>After this hedge:</b><br>"
+                f" 95% VaR:  ${var_per_var[idx]:,.0f}"
+                f"  ({100.0*(1-var_per_var[idx]/max(var_per_var[0],1)):+.0f}%)<br>"
+                f" 95% CVaR: ${cvar_per_var[idx]:,.0f}"
+                f"  ({100.0*(1-cvar_per_var[idx]/max(cvar_per_var[0],1)):+.0f}%)<br>"
+                f" Worst case: ${worst_per_var[idx]:,.0f}"
+                f"  ({100.0*(1-worst_per_var[idx]/max(worst_per_var[0],1)):+.0f}%)<br>"
+                f" Median per-event savings: ${med_savings:,.0f}<br>"
+                f" Median coverage: {cov_per_var[idx]:.1f}%")
 
     init_idx = 0
     frames = [
         go.Frame(
             name=str(j),
-            data=[_bars(j)],
+            data=[_unhedged_bar(), _hedged_bar(j)],
             layout=go.Layout(annotations=[dict(
                 text=_annotation(j),
                 xref="paper", yref="paper",
-                x=1.0, y=1.0, xanchor="right", yanchor="top",
-                showarrow=False, align="right",
-                bgcolor="rgba(255,255,255,0.92)",
+                x=1.02, y=1.0, xanchor="left", yanchor="top",
+                showarrow=False, align="left",
+                bgcolor="rgba(255,255,255,0.95)",
                 bordercolor="#888", borderwidth=1, borderpad=8,
-                font=dict(size=12, family="monospace"),
+                font=dict(size=11, family="monospace"),
             )]),
         )
         for j in range(n_hedge)
     ]
 
     fig = go.Figure(
-        data=[_bars(init_idx)],
+        data=[_unhedged_bar(), _hedged_bar(init_idx)],
         frames=frames,
     )
     fig.update_layout(
         title=dict(text=(f"<b>Stress replay explorer</b> &nbsp; "
                           f"short {n_contracts}× {K_short}-put on SPY "
                           f"30-DTE  (today F = {today_F:.0f}). "
-                          "Drag the slider to change the long-put hedge."),
+                          "Drag the slider to swap in different hedges."),
                    x=0.02, font=dict(size=13)),
-        xaxis=dict(title="Historical event (worst → least)", tickangle=-30),
-        yaxis=dict(title="Per-event PnL ($ thousands; negative = loss)"),
-        height=560, margin=dict(l=60, r=240, t=80, b=120),
+        xaxis=dict(title="Historical event (worst → least)", tickangle=-35,
+                   tickfont=dict(size=9)),
+        yaxis=dict(title="Per-event PnL ($ thousands; negative = loss)",
+                   zeroline=True, zerolinewidth=1, zerolinecolor="#888"),
+        height=600, margin=dict(l=60, r=320, t=80, b=130),
+        barmode="group",
+        bargap=0.15,
+        bargroupgap=0.05,
         annotations=[dict(
             text=_annotation(init_idx),
             xref="paper", yref="paper",
-            x=1.0, y=1.0, xanchor="right", yanchor="top",
-            showarrow=False, align="right",
-            bgcolor="rgba(255,255,255,0.92)",
+            x=1.02, y=1.0, xanchor="left", yanchor="top",
+            showarrow=False, align="left",
+            bgcolor="rgba(255,255,255,0.95)",
             bordercolor="#888", borderwidth=1, borderpad=8,
-            font=dict(size=12, family="monospace"),
+            font=dict(size=11, family="monospace"),
         )],
-        showlegend=False,
+        showlegend=True,
+        legend=dict(orientation="h", x=0.5, y=1.08, xanchor="center"),
         sliders=[{
             "active": init_idx,
-            "currentvalue": {"prefix": "Hedge: ",
-                              "font": {"size": 13}},
+            "currentvalue": {"prefix": "Hedge variant: ",
+                              "font": {"size": 14, "color": "#B31B1B"}},
             "pad": {"b": 10, "t": 30},
-            "len": 0.85,
-            "x": 0.08,
+            "len": 0.7,
+            "x": 0.15,
             "steps": [
-                {"args": [[str(j)], {"frame": {"duration": 0},
-                                      "mode": "immediate"}],
+                {"args": [[str(j)], {"frame": {"duration": 200, "redraw": True},
+                                      "mode": "immediate",
+                                      "transition": {"duration": 200}}],
                  "label": hedge_labels[j], "method": "animate"}
                 for j in range(n_hedge)
+            ],
+        }],
+        updatemenus=[{
+            "type": "buttons", "showactive": False,
+            "x": 0.02, "y": -0.18,
+            "buttons": [
+                {"args": [None, {"frame": {"duration": 800, "redraw": True},
+                                   "fromcurrent": True,
+                                   "transition": {"duration": 200}}],
+                 "label": "▶ Cycle hedges", "method": "animate"},
+                {"args": [[None], {"frame": {"duration": 0, "redraw": False},
+                                     "mode": "immediate"}],
+                 "label": "❚❚ Pause", "method": "animate"},
             ],
         }],
     )
